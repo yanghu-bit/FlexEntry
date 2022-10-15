@@ -2,7 +2,7 @@
 
 This is a Tensorflow implementation of FlexEntry as described in our paper:
 
-Minghao Ye, Yang Hu, Junjie Zhang, Zehua Guo, H. Jonathan Chao, "[Mitigating Routing Update Overhead for Traffic Engineering by Combining Destination-based Routing with Reinforcement Learning] (https://doi.org/10.1109/JSAC.2022.3191337)," in IEEE Journal on Selected Areas in Communications, vol. 40, no. 9, pp. 2662-2677, Sept. 2022, doi: 10.1109/JSAC.2022.3191337.
+Minghao Ye, Yang Hu, Junjie Zhang, Zehua Guo, H. Jonathan Chao, "[Mitigating Routing Update Overhead for Traffic Engineering by Combining Destination-based Routing with Reinforcement Learning](https://doi.org/10.1109/JSAC.2022.3191337)," in IEEE Journal on Selected Areas in Communications, vol. 40, no. 9, pp. 2662-2677, Sept. 2022, doi: 10.1109/JSAC.2022.3191337.
 
 # Prerequisites
 
