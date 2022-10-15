@@ -4,16 +4,14 @@ from __future__ import print_function
 
 import os
 import inspect
-import numpy as np
 import tensorflow as tf
-from utils import get_shape_list, get_position_encoding
 
-#model for stage 1
+#single model for sub-model selection
+#training in the second stage
 class Network():
-    def __init__(self, config, input_dims, action_dim, mask=None, master=True):
+    def __init__(self, config, input_dims, action_dim, master=True):
         self.input_dims = input_dims
         self.action_dim = config.models_num + 1
-        self.attention_mask = mask
         self.max_moves = config.max_moves
         self.model_name = config.version+'-'\
                             +config.project_name+'_'\
@@ -22,8 +20,7 @@ class Network():
                             +config.topology_file+'_'\
                             +config.traffic_file
 
-        if config.method == 'actor_critic':
-            self.create_actor_critic_model(config)
+        self.create_actor_critic_model(config)
 
         self.lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
                 config.initial_learning_rate,
@@ -32,17 +29,14 @@ class Network():
                 staircase=True)
 
         if config.optimizer == 'RMSprop':
-            if config.method == 'actor_critic':
-                self.actor_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
-                self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
+            self.actor_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
+            self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
         elif config.optimizer == 'Adam':
-            if config.method == 'actor_critic':
-                self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
-                self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
+            self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
+            self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
 
         if master:
-            if config.method == 'actor_critic':
-                self.ckpt = tf.train.Checkpoint(step=tf.Variable(1), actor_optimizer=self.actor_optimizer, critic_optimizer=self.critic_optimizer, model=self.model)
+            self.ckpt = tf.train.Checkpoint(step=tf.Variable(1), actor_optimizer=self.actor_optimizer, critic_optimizer=self.critic_optimizer, model=self.model)
             self.ckpt_dir = './tf_ckpts/'+self.model_name
             self.manager = tf.train.CheckpointManager(self.ckpt, self.ckpt_dir, max_to_keep=config.max_to_keep)
             self.writer = tf.compat.v2.summary.create_file_writer('./logs/%s' % self.model_name)
@@ -113,36 +107,16 @@ class Network():
         return value_loss, advantages
 
     def policy_loss_fn_action_combination(self, logits, actions, advantages, entropy_weight=0.01, log_epsilon=1e-12):
-
-        #print('actions:',actions[5])
-
         actions = tf.reshape(actions, [-1, self.max_moves, self.action_dim])                            #actions shape = [batch_size, max_moves, action_dim]
         policy = tf.nn.softmax(logits)                                                                  #policy shape = [batch_size, action_dim]
         assert policy.shape[0] == actions.shape[0] and advantages.shape[0] == actions.shape[0]
-
-
-
         entropy = tf.nn.softmax_cross_entropy_with_logits(labels=policy, logits=logits)                 #entropy already includes "-", shape = [batch_size,]
         entropy = tf.expand_dims(entropy, -1)                                                           #[batch_size, 1]
-
-        #print('entropy:',entropy)
-
         policy = tf.expand_dims(policy, -1)                                                             #policy shape = [batch_size, action_dim, 1]
         policy_loss = tf.math.log(tf.maximum(tf.squeeze(tf.matmul(actions, policy)), log_epsilon))      #[batch_size, max_moves]
-
-        #print('policy_loss:', policy_loss.shape)
-
-        #policy_loss = tf.reduce_sum(policy_loss, 1, keepdims=True)                                      #[batch_size, 1]   ##changed
-
         policy_loss = tf.expand_dims(policy_loss,1)
-
-        #print('policy_lossx:', policy_loss.shape)
-
         """ '-'advantages means gradient asdcend. same for entropy """
         policy_loss = tf.multiply(policy_loss, tf.stop_gradient(-advantages))                           #[batch_size, 1]
-
-        #print('policy_lossxx:',policy_loss.shape)
-
         policy_loss -= entropy_weight * entropy
         policy_loss = tf.reduce_sum(policy_loss)
 
@@ -153,64 +127,29 @@ class Network():
 
     @tf.function
     def actor_critic_train(self, inputs, actions, rewards, entropy_weight=0.01):
-        if self.attention_mask is not None:
-            # Tracks the variables involved in computing the loss by using tf.GradientTape
-            shape = get_shape_list(inputs, expected_rank=3)
-            attention_masks = np.repeat(self.attention_mask, shape[0], axis=0)
-            with tf.GradientTape() as tape:
-                values = self.critic_model([inputs, attention_masks], training=True)
-                value_loss, advantages = self.value_loss_fn(rewards, values)
+        # Tracks the variables involved in computing the loss by using tf.GradientTape
+        with tf.GradientTape() as tape:
+            values = self.critic_model(inputs, training=True)
+            value_loss, advantages = self.value_loss_fn(rewards, values)
 
-            critic_gradients = tape.gradient(value_loss, self.critic_model.trainable_variables)
-            self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic_model.trainable_variables))
+        critic_gradients = tape.gradient(value_loss, self.critic_model.trainable_variables)
+        self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic_model.trainable_variables))
 
-            with tf.GradientTape() as tape:
-                logits = self.actor_model([inputs, attention_masks], training=True)
-                #policy_loss, entropy = self.policy_loss_fn(logits, actions, advantages, entropy_weight)
-                #policy_loss, entropy = self.policy_loss_fn_with_log_epsilon(logits, actions, advantages, entropy_weight)
-                policy_loss, entropy = self.policy_loss_fn_action_combination(logits, actions, advantages, entropy_weight)
+        with tf.GradientTape() as tape:
+            logits = self.actor_model(inputs, training=True)
+            policy_loss, entropy = self.policy_loss_fn_action_combination(logits, actions, advantages, entropy_weight)
 
-            actor_gradients = tape.gradient(policy_loss, self.actor_model.trainable_variables)
-            self.actor_optimizer.apply_gradients(zip(actor_gradients, self.actor_model.trainable_variables))
-        else:
-            # Tracks the variables involved in computing the loss by using tf.GradientTape
-            with tf.GradientTape() as tape:
-                values = self.critic_model(inputs, training=True)
-                value_loss, advantages = self.value_loss_fn(rewards, values)
-
-            critic_gradients = tape.gradient(value_loss, self.critic_model.trainable_variables)
-            self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic_model.trainable_variables))
-
-            with tf.GradientTape() as tape:
-                logits = self.actor_model(inputs, training=True)
-                #policy_loss, entropy = self.policy_loss_fn(logits, actions, advantages, entropy_weight)
-                #policy_loss, entropy = self.policy_loss_fn_with_log_epsilon(logits, actions, advantages, entropy_weight).
-                #print('logits shape:',logits.shape,logits[0])
-                policy_loss, entropy = self.policy_loss_fn_action_combination(logits, actions, advantages, entropy_weight)
-
-            actor_gradients = tape.gradient(policy_loss, self.actor_model.trainable_variables)
-            self.actor_optimizer.apply_gradients(zip(actor_gradients, self.actor_model.trainable_variables))
+        actor_gradients = tape.gradient(policy_loss, self.actor_model.trainable_variables)
+        self.actor_optimizer.apply_gradients(zip(actor_gradients, self.actor_model.trainable_variables))
 
         return value_loss, entropy, actor_gradients, critic_gradients
 
     @tf.function
     def actor_predict(self, inputs, softmax_temp=1):
-        if self.attention_mask is not None:
-            logits = self.actor_model([inputs, self.attention_mask], training=False)
-        else:
-            logits = self.actor_model(inputs, training=False)
+        logits = self.actor_model(inputs, training=False)
         policy = tf.nn.softmax(logits/softmax_temp)
 
         return policy
-
-    @tf.function
-    def critic_predict(self, inputs):
-        if self.attention_mask is not None:
-            critic_outputs = self.critic_model([inputs, self.attention_mask], training=False)
-        else:
-            critic_outputs = self.critic_model(inputs, training=False)
-        
-        return critic_outputs
  
     def restore_ckpt(self, checkpoint=''):
         if checkpoint == '':
@@ -274,12 +213,12 @@ class Network():
         print("Save hyper parameters: %s" % fp)
         f.close()
 
-#model for stage 2
+#sub-models for critical entry selection
+#already trained in the first stage and directly plug-in
 class Network_model():
-    def __init__(self, config, input_dims, action_dim, model_max_moves, mask=None, master=True):
+    def __init__(self, config, input_dims, action_dim, model_max_moves, master=True):
         self.input_dims = input_dims
         self.action_dim = action_dim
-        self.attention_mask = mask
         self.max_moves = model_max_moves
         self.model_name = config.version + '-' \
                           + config.project_name + '_' \
@@ -288,9 +227,7 @@ class Network_model():
                           + config.topology_file + '_' \
                           + config.traffic_file
 
-        if config.method == 'actor_critic':
-            if config.model_type == 'Conv':
-                self.create_actor_critic_model(config)
+        self.create_actor_critic_model(config)
 
         self.lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
             config.initial_learning_rate,
@@ -299,27 +236,20 @@ class Network_model():
             staircase=True)
 
         if config.optimizer == 'RMSprop':
-            if config.method == 'actor_critic':
-                self.actor_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
-                self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
+            self.actor_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
+            self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
         elif config.optimizer == 'Adam':
-            if config.method == 'actor_critic':
-                self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
-                self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
+            self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
+            self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
+
+        self.ckpt = tf.train.Checkpoint(step=tf.Variable(1), actor_optimizer=self.actor_optimizer, critic_optimizer=self.critic_optimizer, model=self.model)
 
         if master:
-            if config.method == 'actor_critic':
-                self.ckpt = tf.train.Checkpoint(step=tf.Variable(1), actor_optimizer=self.actor_optimizer,
-                                                critic_optimizer=self.critic_optimizer, model=self.model)
             self.ckpt_dir = './tfx_ckpts/' + self.model_name
             self.manager = tf.train.CheckpointManager(self.ckpt, self.ckpt_dir, max_to_keep=config.max_to_keep)
             self.writer = tf.compat.v2.summary.create_file_writer('./logxs/%s' % self.model_name)
             # self.save_hyperparams(config)
             self.model.summary()
-
-        self.ckpt = tf.train.Checkpoint(step=tf.Variable(1), actor_optimizer=self.actor_optimizer, critic_optimizer=self.critic_optimizer, model=self.model)
-
-
 
     def create_actor_critic_model(self, config):
         tf.keras.backend.set_floatx('float32')
@@ -337,8 +267,7 @@ class Network_model():
         x_1 = tf.keras.layers.LeakyReLU()(x_1)
         x_1 = tf.keras.layers.Flatten()(x_1)
         if config.l2_regularizer > 0:
-            Dense1_1 = tf.keras.layers.Dense(config.Dense_out,
-                                             kernel_regularizer=tf.keras.regularizers.l2(config.l2_regularizer))
+            Dense1_1 = tf.keras.layers.Dense(config.Dense_out, kernel_regularizer=tf.keras.regularizers.l2(config.l2_regularizer))
         else:
             Dense1_1 = tf.keras.layers.Dense(config.Dense_out)
         x_1 = Dense1_1(x_1)
@@ -362,8 +291,7 @@ class Network_model():
         x_2 = tf.keras.layers.LeakyReLU()(x_2)
         x_2 = tf.keras.layers.Flatten()(x_2)
         if config.l2_regularizer > 0:
-            Dense1_2 = tf.keras.layers.Dense(config.Dense_out,
-                                             kernel_regularizer=tf.keras.regularizers.l2(config.l2_regularizer))
+            Dense1_2 = tf.keras.layers.Dense(config.Dense_out, kernel_regularizer=tf.keras.regularizers.l2(config.l2_regularizer))
         else:
             Dense1_2 = tf.keras.layers.Dense(config.Dense_out)
         x_2 = Dense1_2(x_2)
@@ -410,89 +338,32 @@ class Network_model():
 
     @tf.function
     def actor_critic_train(self, inputs, actions, rewards, entropy_weight=0.01):
-        if self.attention_mask is not None:
-            # Tracks the variables involved in computing the loss by using tf.GradientTape
-            shape = get_shape_list(inputs, expected_rank=3)
-            attention_masks = np.repeat(self.attention_mask, shape[0], axis=0)
-            with tf.GradientTape() as tape:
-                values = self.critic_model([inputs, attention_masks], training=True)
-                value_loss, advantages = self.value_loss_fn(rewards, values)
+        # Tracks the variables involved in computing the loss by using tf.GradientTape
+        with tf.GradientTape() as tape:
+            values = self.critic_model(inputs, training=True)
+            value_loss, advantages = self.value_loss_fn(rewards, values)
 
-            critic_gradients = tape.gradient(value_loss, self.critic_model.trainable_variables)
-            self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic_model.trainable_variables))
+        critic_gradients = tape.gradient(value_loss, self.critic_model.trainable_variables)
+        self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic_model.trainable_variables))
 
-            with tf.GradientTape() as tape:
-                logits = self.actor_model([inputs, attention_masks], training=True)
-                # policy_loss, entropy = self.policy_loss_fn(logits, actions, advantages, entropy_weight)
-                # policy_loss, entropy = self.policy_loss_fn_with_log_epsilon(logits, actions, advantages, entropy_weight)
-                policy_loss, entropy = self.policy_loss_fn_action_combination(logits, actions, advantages,
-                                                                              entropy_weight)
+        with tf.GradientTape() as tape:
+            logits = self.actor_model(inputs, training=True)
+            # policy_loss, entropy = self.policy_loss_fn(logits, actions, advantages, entropy_weight)
+            # policy_loss, entropy = self.policy_loss_fn_with_log_epsilon(logits, actions, advantages, entropy_weight)
+            policy_loss, entropy = self.policy_loss_fn_action_combination(logits, actions, advantages,
+                                                                            entropy_weight)
 
-            actor_gradients = tape.gradient(policy_loss, self.actor_model.trainable_variables)
-            self.actor_optimizer.apply_gradients(zip(actor_gradients, self.actor_model.trainable_variables))
-        else:
-            # Tracks the variables involved in computing the loss by using tf.GradientTape
-            with tf.GradientTape() as tape:
-                values = self.critic_model(inputs, training=True)
-                value_loss, advantages = self.value_loss_fn(rewards, values)
-
-            critic_gradients = tape.gradient(value_loss, self.critic_model.trainable_variables)
-            self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic_model.trainable_variables))
-
-            with tf.GradientTape() as tape:
-                logits = self.actor_model(inputs, training=True)
-                # policy_loss, entropy = self.policy_loss_fn(logits, actions, advantages, entropy_weight)
-                # policy_loss, entropy = self.policy_loss_fn_with_log_epsilon(logits, actions, advantages, entropy_weight)
-                policy_loss, entropy = self.policy_loss_fn_action_combination(logits, actions, advantages,
-                                                                              entropy_weight)
-
-            actor_gradients = tape.gradient(policy_loss, self.actor_model.trainable_variables)
-            self.actor_optimizer.apply_gradients(zip(actor_gradients, self.actor_model.trainable_variables))
+        actor_gradients = tape.gradient(policy_loss, self.actor_model.trainable_variables)
+        self.actor_optimizer.apply_gradients(zip(actor_gradients, self.actor_model.trainable_variables))
 
         return value_loss, entropy, actor_gradients, critic_gradients
 
     @tf.function
     def actor_predict(self, inputs, softmax_temp=1):
-        if self.attention_mask is not None:
-            logits = self.actor_model([inputs, self.attention_mask], training=False)
-        else:
-            logits = self.actor_model(inputs, training=False)
+        logits = self.actor_model(inputs, training=False)
         policy = tf.nn.softmax(logits / softmax_temp)
 
         return policy
-
-    @tf.function
-    def critic_predict(self, inputs):
-        if self.attention_mask is not None:
-            critic_outputs = self.critic_model([inputs, self.attention_mask], training=False)
-        else:
-            critic_outputs = self.critic_model(inputs, training=False)
-
-        return critic_outputs
-
-    @tf.function
-    def policy_predict(self, inputs):
-        if self.attention_mask is not None:
-            logits = self.model([inputs, self.attention_mask], training=False)
-        else:
-            logits = self.model(inputs, training=False)
-        policy = tf.nn.softmax(logits)
-
-        return policy
-
-    def preprocess(self, _s_batch, _r_batch):
-        # Instead of computing gradients for each action,
-        # batch all actions and compute one set of gradients.
-        batch_size = len(_s_batch)
-        assert batch_size == len(_r_batch), ('batch size does not match', len(_s_batch), len(_r_batch))
-
-        s_batch = []
-        r_batch = []
-        for i in range(batch_size):
-            s_batch += [_s_batch[i] for _ in range(self.max_moves)]
-            r_batch += [_r_batch[i] for _ in range(self.max_moves)]
-
-        return s_batch, r_batch
 
     def restore_ckpt(self, model_id, checkpoint=''):
         ckpt_dir = './models/' + str(model_id + 1) +'/tf_ckpts/' + self.model_name

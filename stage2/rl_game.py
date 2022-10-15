@@ -12,14 +12,12 @@ from game import Game
 class FlexEntry_Game(Game):
     def __init__(self, config, env, random_seed=1000):
         super(FlexEntry_Game, self).__init__(config, env, random_seed)
+
         self.project_name = config.project_name
         self.max_moves = config.max_moves
         self.action_dim = config.models_num + 1
         assert self.max_moves <= self.action_dim, (self.max_moves, self.action_dim)
-        if config.softmax_temperature:
-            self.softmax_temperature = np.sqrt(self.action_dim)
-        else:
-            self.softmax_temperature = 1
+        self.softmax_temperature = 1
 
         self.tm_indexes = np.arange(0, self.tm_cnt)
         self.valid_tm_cnt = len(self.tm_indexes)
@@ -27,6 +25,7 @@ class FlexEntry_Game(Game):
         self.generate_traffic_matrices(normalization=True)
         self.state_dims = self.normalized_traffic_matrices.shape[1:]
         print('Input dims :', self.state_dims)
+
         self.get_optimal_routing_mlu()
 
     def get_state(self, tm_idx):
@@ -85,7 +84,7 @@ class FlexEntry_Game(Game):
         if top_k:
             top_k_actions = self.entries_top_k(tm_idx, len(actions))
             _, solution = self.optimal_routing_mlu_critical_entries_v2(tm_idx, top_k_actions)
-            self.eliminate_loops(tm_idx, solution, top_k_actions)
+            _ = self.eliminate_loops(tm_idx, solution, top_k_actions)
             top_k_mlu, top_k_delay = self.eval_weighted_traffic_distribution(tm_idx, solution, eval_delay=eval_delay)
         #FlexEntry actions:
         if actions[0] == -1:
@@ -94,11 +93,7 @@ class FlexEntry_Game(Game):
         else:
             _, solution = self.optimal_routing_mlu_critical_entries_v2(tm_idx, actions)
             affected_ecmp_entry_cnt = self.eliminate_loops(tm_idx, solution, actions)
-            if affected_ecmp_entry_cnt == -100:
-                mlu = [100]
-                delay = [100]
-            else:
-                mlu, delay = self.eval_weighted_traffic_distribution(tm_idx, solution, eval_delay=eval_delay)
+            mlu, delay = self.eval_weighted_traffic_distribution(tm_idx, solution, eval_delay=eval_delay)
 
         #calculate and print result:
         try:
@@ -126,12 +121,12 @@ class FlexEntry_Game(Game):
 
         if eval_delay:
             _, solution = self.optimal_routing_delay(tm_idx)
-            optimal_delay, optimal_delay_mlu = self.eval_optimal_routing_delay(tm_idx, solution)
+            optimal_delay, _ = self.eval_optimal_routing_delay(tm_idx, solution)
 
             line += str(optimal_delay/delay[0]) + ', '
             line += str(optimal_delay/optimal_mlu_delay) + ', '
-            if preconfig_paths:
-                line += str(optimal_delay/precfg_paths_mlu_delay[0]) + ', '
+            if top_k:
+                line += str(optimal_delay/top_k_delay[0]) + ', '
             if weighted_ecmp:
                 line += str(optimal_delay/wecmp_delay[0]) + ', '
             if ecmp:

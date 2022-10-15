@@ -6,10 +6,9 @@ class NetworkConfig(object):
   initial_learning_rate = 0.0001
   learning_rate_decay_rate = 0.96
   learning_rate_decay_step = 5 * scale
-  moving_average_decay = 0.9999
   entropy_weight = 0.1
 
-  save_step = 2 * scale
+  save_step = 1 * scale
   max_to_keep = 1000
 
   #Conv
@@ -29,16 +28,10 @@ class Config(NetworkConfig):
 
   project_name = 'FlexEntry'
 
-  method = 'actor_critic'
-  
-  model_type = 'Conv'
-
   model_interval = 'custom'
-  models_num = 6             # number of sub-models
+  models_num = 6             #number of sub-models
   #the first element should be 0, which means no critical entries should be selected
   model_critical_entries_number = [0, 10, 15, 20, 25, 30, 35]
-
-  avg_matrices_num = 1
 
   #topology_file = 'Abilene'
   topology_file = 'Ebone'
@@ -46,6 +39,13 @@ class Config(NetworkConfig):
   #topology_file = 'Tiscali'
   #topology_file = 'nobel'
   #topology_file = 'Germany50'
+
+  #only choose one sub-model
+  max_moves = 1
+
+  method = 'actor_critic'
+  
+  model_type = 'Conv'
 
   traffic_file = 'TM1'
   test_traffic_file = 'TM2'
@@ -55,17 +55,7 @@ class Config(NetworkConfig):
 
   num_agents = 20
 
-  #only choose one sub-model
-  max_moves = 1
-
-  softmax_temperature = False
-
-  priority_sampling = False
-
   num_iter = 50
-  max_paths_per_pair = 4   # = -1 means all paths are selected
-
-  LP_solver = 'Gurobi'
 
 def get_config(FLAGS):
   config = Config
