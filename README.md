@@ -2,7 +2,7 @@
 
 This is a Tensorflow implementation of FlexEntry as described in our paper:
 
-Minghao Ye, Yang Hu, Junjie Zhang, Zehua Guo, H. Jonathan Chao. (2021). Mitigating Routing Update Overhead for Traffic Engineering by Combining Destination-based Routing with Reinforcement Learning. Manuscript submitted for publication.
+Minghao Ye, Yang Hu, Junjie Zhang, Zehua Guo, H. Jonathan Chao, "[Mitigating Routing Update Overhead for Traffic Engineering by Combining Destination-based Routing with Reinforcement Learning](https://doi.org/10.1109/JSAC.2022.3191337)," in IEEE Journal on Selected Areas in Communications, vol. 40, no. 9, pp. 2662-2677, Sept. 2022, doi: 10.1109/JSAC.2022.3191337.
 
 # Prerequisites
 
@@ -14,7 +14,7 @@ Minghao Ye, Yang Hu, Junjie Zhang, Zehua Guo, H. Jonathan Chao. (2021). Mitigati
 ```
 python3 stage1/train.py
 ``` 
-- For stage 2, to train a stage 2 model for a topology, unzip and put the topology file (e.g., Ebone) and the traffic matrix file (e.g., EboneTM) in `stage1/data/`, then specify the file name in config.py, i.e., topology_file = 'Ebone' and traffic_file = 'TM', and then run 
+- For stage 2, to train a stage 2 model for a topology, unzip and put the topology file (e.g., Ebone) and the traffic matrix file (e.g., EboneTM) in `stage2/data/`, then specify the file name in config.py, i.e., topology_file = 'Ebone' and traffic_file = 'TM', and then run 
 ```
 python3 stage2/train.py
 ``` 
@@ -32,3 +32,17 @@ python3 stage1/test.py
 ```
 python3 stage2/test.py
 ```
+
+# Reference
+
+Please cite our paper if you find our paper/code is useful for your work.
+
+@ARTICLE{ye2022flexentry,
+  author={Ye, Minghao and Hu, Yang and Zhang, Junjie and Guo, Zehua and Chao, H. Jonathan},
+  journal={IEEE Journal on Selected Areas in Communications}, 
+  title={Mitigating Routing Update Overhead for Traffic Engineering by Combining Destination-Based Routing With Reinforcement Learning}, 
+  year={2022},
+  volume={40},
+  number={9},
+  pages={2662-2677},
+  doi={10.1109/JSAC.2022.3191337}}

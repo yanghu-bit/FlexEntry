@@ -3,24 +3,13 @@ class NetworkConfig(object):
 
   max_step = 1000 * scale
   
-  initial_learning_rate = 0.00001
-  learning_rate_minimum = 0.000001
+  initial_learning_rate = 0.0001
   learning_rate_decay_rate = 0.96
   learning_rate_decay_step = 5 * scale
-  moving_average_decay = 0.9999
-  entropy_weight = 0.01
+  entropy_weight = 0.1
 
   save_step = 10 * scale
   max_to_keep = 1000
-
-  #Transformer
-  embedding_dim = 64
-  LSTM_embedding = False
-  num_layers = 6
-  num_attention_heads = 8
-  intermediate_dim = 256
-  transformer_normalization = 'LayerNormalization'
-  position_embedding = True
 
   #Conv
   Conv2D_out = 128
@@ -39,28 +28,20 @@ class Config(NetworkConfig):
 
   project_name = 'FlexEntry'
 
-  # topology_file = 'Abilene'
+  #topology_file = 'Abilene'
   topology_file = 'Ebone'
-  # topology_file = 'Sprintlink'
-  # topology_file = 'Tiscali'
-  # topology_file = 'nobel'
-  # topology_file = 'Germany50'
+  #topology_file = 'Sprintlink'
+  #topology_file = 'Tiscali'
+  #topology_file = 'nobel'
+  #topology_file = 'Germany50'
 
-  # Critical entries number
-  # Change according to topology
+  #Critical entries number
+  #Change according to topology
   max_moves = 51
 
   method = 'actor_critic'
   
   model_type = 'Conv'
-  
-  encoder = 'Graph'
-
-  reward_type = 'mlu'
-
-  dis_thresh = 0.1
-
-  avg_matrices_num = 1
 
   traffic_file = 'TM1'
   test_traffic_file = 'TM2'
@@ -70,19 +51,9 @@ class Config(NetworkConfig):
 
   num_agents = 20
 
-
-
   normalized_reward = True
 
-  softmax_temperature = False
-
-  # For pure policy
-  baseline = 'avg'          #avg, best
-
   num_iter = 20
-  max_paths_per_pair = 4   # = -1 means all paths are selected
-
-  LP_solver = 'Gurobi'
 
 def get_config(FLAGS):
   config = Config

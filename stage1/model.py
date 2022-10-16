@@ -4,15 +4,12 @@ from __future__ import print_function
 
 import os
 import inspect
-import numpy as np
 import tensorflow as tf
-from utils import get_shape_list, get_position_encoding
 
 class Network():
-    def __init__(self, config, input_dims, action_dim, mask=None, master=True):
+    def __init__(self, config, input_dims, action_dim, master=True):
         self.input_dims = input_dims
         self.action_dim = action_dim
-        self.attention_mask = mask
         self.max_moves = config.max_moves
         self.model_name = config.version+'-'\
                             +config.project_name+'_'\
@@ -21,9 +18,7 @@ class Network():
                             +config.topology_file+'_'\
                             +config.traffic_file
 
-        if config.method == 'actor_critic':
-            if config.model_type == 'Conv':
-                self.create_actor_critic_model(config)
+        self.create_actor_critic_model(config)
 
         self.lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
                 config.initial_learning_rate,
@@ -32,17 +27,14 @@ class Network():
                 staircase=True)
 
         if config.optimizer == 'RMSprop':
-            if config.method == 'actor_critic':
-                self.actor_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
-                self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
+            self.actor_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
+            self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr_schedule)
         elif config.optimizer == 'Adam':
-            if config.method == 'actor_critic':
-                self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
-                self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
-        
+            self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
+            self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule)
+
         if master:
-            if config.method == 'actor_critic':
-                self.ckpt = tf.train.Checkpoint(step=tf.Variable(1), actor_optimizer=self.actor_optimizer, critic_optimizer=self.critic_optimizer, model=self.model)
+            self.ckpt = tf.train.Checkpoint(step=tf.Variable(1), actor_optimizer=self.actor_optimizer, critic_optimizer=self.critic_optimizer, model=self.model)
             self.ckpt_dir = './tf_ckpts/'+self.model_name
             self.manager = tf.train.CheckpointManager(self.ckpt, self.ckpt_dir, max_to_keep=config.max_to_keep)
             self.writer = tf.compat.v2.summary.create_file_writer('./logs/%s' % self.model_name)
@@ -146,8 +138,6 @@ class Network():
 
         with tf.GradientTape() as tape:
             logits = self.actor_model(inputs, training=True)
-            #policy_loss, entropy = self.policy_loss_fn(logits, actions, advantages, entropy_weight)
-            #policy_loss, entropy = self.policy_loss_fn_with_log_epsilon(logits, actions, advantages, entropy_weight)
             policy_loss, entropy = self.policy_loss_fn_action_combination(logits, actions, advantages, entropy_weight)
 
         actor_gradients = tape.gradient(policy_loss, self.actor_model.trainable_variables)
@@ -157,22 +147,10 @@ class Network():
 
     @tf.function
     def actor_predict(self, inputs, softmax_temp=1):
-        if self.attention_mask is not None:
-            logits = self.actor_model([inputs, self.attention_mask], training=False)
-        else:
-            logits = self.actor_model(inputs, training=False)
+        logits = self.actor_model(inputs, training=False)
         policy = tf.nn.softmax(logits/softmax_temp)
 
         return policy
-
-    @tf.function
-    def critic_predict(self, inputs):
-        if self.attention_mask is not None:
-            critic_outputs = self.critic_model([inputs, self.attention_mask], training=False)
-        else:
-            critic_outputs = self.critic_model(inputs, training=False)
-        
-        return critic_outputs
  
     def restore_ckpt(self, checkpoint=''):
         if checkpoint == '':

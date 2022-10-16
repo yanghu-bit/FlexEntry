@@ -1,6 +1,5 @@
 from __future__ import print_function
 
-import os
 import numpy as np
 from absl import app
 from absl import flags
@@ -8,7 +7,6 @@ from absl import flags
 import tensorflow as tf
 from env import Environment
 from rl_game import FlexEntry_Game
-from utils import softmax
 from model import Network
 from config import get_config
 
@@ -31,7 +29,7 @@ def main(_):
     config = get_config(FLAGS) or FLAGS
     env = Environment(config, is_training=False)
     game = FlexEntry_Game(config, env)
-    network = Network(config, game.state_dims, game.action_dim, mask=game.adjacent_matrix)
+    network = Network(config, game.state_dims, game.action_dim)
 
     step = network.restore_ckpt(FLAGS.ckpt)
     learning_rate = network.lr_schedule(network.actor_optimizer.iterations.numpy()).numpy()
